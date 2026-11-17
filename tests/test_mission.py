@@ -1,7 +1,7 @@
-"""owlsightMCP tests: the safety gate, the hover-and-verify loop, and the report.
+"""GroundTruthVisionMCP tests: the safety gate, the hover-and-verify loop, and the report.
 All in the simulator: no drone, no network.
 
-    cd owlsightMCP && python -m pytest -q
+    cd GroundTruthVisionMCP && python -m pytest -q
 """
 import json
 import os
@@ -13,11 +13,11 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from owlsight_mcp.drone import SimDrone, World, bearing_to          # noqa: E402
-from owlsight_mcp.mission import Mission                              # noqa: E402
-from owlsight_mcp.perception import (SimDetector, SimVerifier, Verdict,  # noqa: E402
+from groundtruthvision_mcp.drone import SimDrone, World, bearing_to          # noqa: E402
+from groundtruthvision_mcp.mission import Mission                              # noqa: E402
+from groundtruthvision_mcp.perception import (SimDetector, SimVerifier, Verdict,  # noqa: E402
                                   _parse_verdict)
-from owlsight_mcp.safety import FlightBox, Limits, SafetyGate         # noqa: E402
+from groundtruthvision_mcp.safety import FlightBox, Limits, SafetyGate         # noqa: E402
 
 WORLD = str(ROOT / "sim/worlds/living_room.json")
 
@@ -169,7 +169,7 @@ def test_parse_verdict_handles_thinking_and_bad_json():
 
 def test_ollama_verifier_sends_image(monkeypatch, tmp_path):
     import io
-    from owlsight_mcp.perception import OllamaVerifier
+    from groundtruthvision_mcp.perception import OllamaVerifier
     img = tmp_path / "f.png"
     img.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\0" * 8)
     sent = {}
@@ -192,7 +192,7 @@ def test_ollama_verifier_sends_image(monkeypatch, tmp_path):
 
 
 def test_nvidia_verifier_defaults_to_nemotron(monkeypatch):
-    from owlsight_mcp.perception import OpenAIVisionVerifier
+    from groundtruthvision_mcp.perception import OpenAIVisionVerifier
     monkeypatch.delenv("DRONE_VISION_MODEL", raising=False)
     v = OpenAIVisionVerifier(key="k")
     assert v.model.startswith("nvidia/nemotron") and "openrouter" in v.base_url
@@ -203,7 +203,7 @@ def test_nvidia_verifier_defaults_to_nemotron(monkeypatch):
 def test_server_tools_fly_a_mission(monkeypatch, tmp_path):
     monkeypatch.setenv("DRONE_RUNS_DIR", str(tmp_path))
     monkeypatch.setenv("DRONE_VERIFIER", "sim")    # no retriEVAL or judge key needed
-    from owlsight_mcp import server as S
+    from groundtruthvision_mcp import server as S
     assert S.start_mission("find the blue backpack")["ok"]
     S.takeoff()
     assert S.scan_for("blue backpack")["found"] is True
@@ -214,7 +214,7 @@ def test_server_tools_fly_a_mission(monkeypatch, tmp_path):
 
 def test_server_lists_expected_tools():
     import asyncio
-    from owlsight_mcp import server as S
+    from groundtruthvision_mcp import server as S
     names = {t.name for t in asyncio.run(S.mcp.list_tools())}
     assert {"start_mission", "takeoff", "land", "move", "rotate", "look", "scan_for",
             "approach", "check_claim", "status", "emergency_stop", "report_mission",
@@ -227,7 +227,7 @@ def _fly_and_report(tmp_path, monkeypatch):
     import asyncio
     monkeypatch.setenv("DRONE_VERIFIER", "sim")
     monkeypatch.setenv("DRONE_RUNS_DIR", str(tmp_path))
-    from owlsight_mcp import server as s
+    from groundtruthvision_mcp import server as s
     s._mission = None
     s.start_mission("find the blue backpack"); s.takeoff()
     s.scan_for("blue backpack"); s.approach("blue backpack"); s.land()

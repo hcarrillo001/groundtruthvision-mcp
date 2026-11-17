@@ -1,11 +1,11 @@
-# owlsightMCP
+# GroundTruthVision
 
-*An owl doesn't swoop on the first shape it sees. It watches, makes sure, then commits.*
+*Powered by [retriEVAL](https://github.com/hcarrillo001/retrieval-mcp).*
 
-Fly a small drone from Claude, Cursor or any MCP client. **owlsight flies;
-[retriEVAL](https://github.com/hcarrillo001/retrieval-mcp) evaluates, live.**
-A safety gate the AI can't talk its way past keeps the flight safe; retriEVAL
-decides what the camera really shows before the drone acts on it or reports it.
+Fly a small drone from Claude, Cursor or any MCP client, and never take its word
+for what it saw. **The drone flies; retriEVAL evaluates, live.** A safety gate
+the AI can't talk its way past keeps the flight safe; retriEVAL decides what the
+camera really shows before the drone acts on it or reports it.
 
 It runs in a **simulator today** and is built to swap in a **Tello EDU**.
 
@@ -41,7 +41,7 @@ Claude ──MCP──> server.py     the tools Claude calls
                 drone.py      SimDrone, or tello.py for the real Tello EDU
 ```
 
-owlsight talks to retriEVAL MCP to MCP: it starts retriEVAL as a local server
+GroundTruthVision talks to retriEVAL MCP to MCP: it starts retriEVAL as a local server
 and keeps one session open for the flight. Local, because the frames are files
 on this computer.
 
@@ -96,9 +96,9 @@ Cursor (`~/.cursor/mcp.json`) or Claude Desktop:
 ```json
 {
   "mcpServers": {
-    "owlsight": {
-      "command": "/Users/hcarrillo/Workspace/owlsight-mcp/.venv/bin/python",
-      "args": ["/Users/hcarrillo/Workspace/owlsight-mcp/run.py"],
+    "groundtruthvision": {
+      "command": "/Users/hcarrillo/Workspace/groundtruthvision-mcp/.venv/bin/python",
+      "args": ["/Users/hcarrillo/Workspace/groundtruthvision-mcp/run.py"],
       "env": {
         "RETRIEVAL_SERVER": "/Users/hcarrillo/Workspace/retrieval-mcp/retrieval-mcp/server.py",
         "RETRIEVAL_PYTHON": "/Users/hcarrillo/Workspace/retrieval-mcp/.venv/bin/python",
@@ -119,13 +119,13 @@ retriEVAL judges real images.
 
 ## The evaluator: retriEVAL
 
-retriEVAL is the evaluator whenever owlsight can find it. Point owlsight at
+retriEVAL is the evaluator whenever GroundTruthVision can find it. Point GroundTruthVision at
 your retriEVAL checkout and give retriEVAL a judge that can see images:
 
 | Variable | Meaning |
 |---|---|
 | `RETRIEVAL_SERVER` | Path to retriEVAL's `server.py` (default `~/Workspace/retrieval-mcp/retrieval-mcp/server.py`) |
-| `RETRIEVAL_PYTHON` | A Python with retriEVAL's requirements installed (default: owlsight's own) |
+| `RETRIEVAL_PYTHON` | A Python with retriEVAL's requirements installed (default: GroundTruthVision's own) |
 | `RETRIEVAL_JUDGE` | `nemotron` for NVIDIA via OpenRouter; empty for retriEVAL's default judge |
 
 Judges for these checks:

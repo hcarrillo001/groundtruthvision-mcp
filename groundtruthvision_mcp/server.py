@@ -1,15 +1,15 @@
 """The MCP server: the tools Claude (or any MCP client) calls to fly the drone.
 
 Run it:
-  python -m owlsight_mcp.server                 # stdio, for Claude Desktop / Cursor
-  DRONE_DRIVER=tello python -m owlsight_mcp.server
+  python -m groundtruthvision_mcp.server                 # stdio, for Claude Desktop / Cursor
+  DRONE_DRIVER=tello python -m groundtruthvision_mcp.server
 
 Configuration (environment variables):
   DRONE_DRIVER         "sim" (default) or "tello"
   DRONE_WORLD          world file for the simulator (default sim/worlds/living_room.json)
   DRONE_VERIFIER       "retrieval" (default when retriEVAL is found: it scores
                        every candidate and the report, live), "sim", "ollama", "openai"
-  RETRIEVAL_SERVER     path to retriEVAL's server.py (see owlsight_mcp/retrieval.py)
+  RETRIEVAL_SERVER     path to retriEVAL's server.py (see groundtruthvision_mcp/retrieval.py)
   RETRIEVAL_JUDGE      retriEVAL's judge for these checks, e.g. "nemotron"
   OLLAMA_VISION_MODEL  e.g. qwen2.5vl:7b or moondream, for DRONE_VERIFIER=ollama
   DRONE_BOX_CM         size of the flight box around take-off on a real drone (default 400)
@@ -32,7 +32,7 @@ from .perception import OllamaVerifier, SimDetector, SimVerifier
 from .safety import FlightBox, SafetyGate
 
 ROOT = Path(__file__).resolve().parent.parent
-mcp = FastMCP("owlsight")
+mcp = FastMCP("groundtruthvision")
 _mission: Mission | None = None
 
 

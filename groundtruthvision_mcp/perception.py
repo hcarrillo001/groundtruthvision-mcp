@@ -182,7 +182,7 @@ class OpenAIVisionVerifier:
         req = urllib.request.Request(
             self.base_url + "/chat/completions", data=json.dumps(payload).encode(),
             headers={"Content-Type": "application/json", "Authorization": f"Bearer {self.key}",
-                     "User-Agent": "owlsightMCP/0.1"})
+                     "User-Agent": "GroundTruthVisionMCP/0.1"})
         t0 = time.perf_counter()
         with urllib.request.urlopen(req, timeout=self.timeout) as r:
             content = json.loads(r.read())["choices"][0]["message"].get("content") or ""

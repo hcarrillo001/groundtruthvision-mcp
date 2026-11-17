@@ -1,4 +1,4 @@
-"""owlsight <-> retriEVAL over MCP: a real stdio session to a stand-in server."""
+"""GroundTruthVision <-> retriEVAL over MCP: a real stdio session to a stand-in server."""
 import os
 import sys
 from pathlib import Path
@@ -8,12 +8,12 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from owlsight_mcp.drone import SimDrone, World                     # noqa: E402
-from owlsight_mcp.mission import Mission                            # noqa: E402
-from owlsight_mcp.perception import SimDetector                     # noqa: E402
-from owlsight_mcp.retrieval import (RetrievalClient, RetrievalError,  # noqa: E402
+from groundtruthvision_mcp.drone import SimDrone, World                     # noqa: E402
+from groundtruthvision_mcp.mission import Mission                            # noqa: E402
+from groundtruthvision_mcp.perception import SimDetector                     # noqa: E402
+from groundtruthvision_mcp.retrieval import (RetrievalClient, RetrievalError,  # noqa: E402
                                     RetrievalVerifier)
-from owlsight_mcp.safety import FlightBox, SafetyGate               # noqa: E402
+from groundtruthvision_mcp.safety import FlightBox, SafetyGate               # noqa: E402
 
 FAKE = str(Path(__file__).with_name("fake_retrieval_server.py"))
 WORLD = str(ROOT / "sim/worlds/living_room.json")

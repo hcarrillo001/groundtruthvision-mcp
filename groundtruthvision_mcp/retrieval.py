@@ -1,14 +1,14 @@
-"""retriEVAL as owlsight's evaluator, live, during the flight.
+"""retriEVAL as GroundTruthVision's evaluator, live, during the flight.
 
-owlsight flies; retriEVAL judges. While the drone hovers over a candidate,
-owlsight asks retriEVAL to score a claim ("There is a blue backpack in view.")
+The drone flies; retriEVAL judges. While the drone hovers over a candidate,
+GroundTruthVision asks retriEVAL to score a claim ("There is a blue backpack in view.")
 against the camera frame with its visual_faithfulness metric. retriEVAL splits
 the claim into parts ("a backpack", "it is blue") and checks each against the
 image, so a black backpack scores 0.5 and is rejected. The same connection
 checks Claude's mission report before it is accepted, against the frames and
 the flight log's facts (distances, heights, actions) together.
 
-The two talk MCP to MCP: owlsight starts retriEVAL as a local MCP server over
+The two talk MCP to MCP: GroundTruthVision starts retriEVAL as a local MCP server over
 stdio and keeps one session open for the whole flight. Local, because the
 frames are files on this computer and retriEVAL needs to read them.
 
@@ -44,7 +44,7 @@ class RetrievalError(RuntimeError):
 class RetrievalClient:
     """One long-lived MCP session to a local retriEVAL server.
 
-    MCP's Python client is async; owlsight is not. A small background thread
+    MCP's Python client is async; GroundTruthVision is not. A small background thread
     owns the event loop and the session, and call() hands work to it."""
 
     def __init__(self, command: str | None = None, args: list | None = None,
@@ -113,7 +113,7 @@ def _claim_for(query: str) -> str:
 
 
 class RetrievalVerifier:
-    """The verifier owlsight uses during the hover: retriEVAL's
+    """The verifier GroundTruthVision uses during the hover: retriEVAL's
     visual_faithfulness on one frame. Confidence is retriEVAL's score."""
 
     def __init__(self, client: RetrievalClient | None = None, judge: str | None = None):
