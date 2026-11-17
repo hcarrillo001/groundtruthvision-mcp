@@ -1,4 +1,6 @@
-# drone-mcp
+# owlsightMCP
+
+*An owl doesn't swoop on the first shape it sees. It watches, makes sure, then commits.*
 
 Fly a small drone from Claude, Cursor or any MCP client, with a safety gate the
 AI can't talk its way past, a hover-and-verify loop so it doesn't believe the
@@ -79,16 +81,16 @@ Cursor (`~/.cursor/mcp.json`) or Claude Desktop:
 ```json
 {
   "mcpServers": {
-    "drone": {
+    "owlsight": {
       "command": "python3",
-      "args": ["/Users/hcarrillo/Workspace/drone-mcp/run.py"]
+      "args": ["/Users/hcarrillo/Workspace/owlsight-mcp/run.py"]
     }
   }
 }
 ```
 
 Use the full path to the Python that has the requirements installed if
-`python3` isn't it (for a virtualenv: `/Users/hcarrillo/Workspace/drone-mcp/.venv/bin/python`).
+`python3` isn't it (for a virtualenv: `/Users/hcarrillo/Workspace/owlsight-mcp/.venv/bin/python`).
 
 Then ask: *"Start a mission to find the blue backpack, take off, scan for it,
 approach it, land, and report what you found."*
@@ -126,7 +128,7 @@ file paths, so run retriEVAL locally (Cursor or Docker) for this step.
 
 ```bash
 pip install djitellopy opencv-python ultralytics
-DRONE_DRIVER=tello DRONE_VERIFIER=ollama python -m drone_mcp.server
+DRONE_DRIVER=tello DRONE_VERIFIER=ollama python -m owlsight_mcp.server
 ```
 
 `tello.py` and `yolo.py` (YOLO-World, an open-vocabulary detector) implement the

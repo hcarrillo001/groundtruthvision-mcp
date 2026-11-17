@@ -1,8 +1,8 @@
 """The MCP server: the tools Claude (or any MCP client) calls to fly the drone.
 
 Run it:
-  python -m drone_mcp.server                 # stdio, for Claude Desktop / Cursor
-  DRONE_DRIVER=tello python -m drone_mcp.server
+  python -m owlsight_mcp.server                 # stdio, for Claude Desktop / Cursor
+  DRONE_DRIVER=tello python -m owlsight_mcp.server
 
 Configuration (environment variables):
   DRONE_DRIVER         "sim" (default) or "tello"
@@ -25,7 +25,7 @@ from .perception import OllamaVerifier, SimDetector, SimVerifier
 from .safety import FlightBox, SafetyGate
 
 ROOT = Path(__file__).resolve().parent.parent
-mcp = FastMCP("drone-mcp")
+mcp = FastMCP("owlsight")
 _mission: Mission | None = None
 
 
