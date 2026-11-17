@@ -217,4 +217,49 @@ def test_server_lists_expected_tools():
     from owlsight_mcp import server as S
     names = {t.name for t in asyncio.run(S.mcp.list_tools())}
     assert {"start_mission", "takeoff", "land", "move", "rotate", "look", "scan_for",
-            "approach", "check_claim", "status", "emergency_stop", "report_mission"} <= names
+            "approach", "check_claim", "status", "emergency_stop", "report_mission",
+            "list_flights", "get_flight_log"} <= names
+
+
+# ---- reading flights back --------------------------------------------------
+
+def _fly_and_report(tmp_path, monkeypatch):
+    import asyncio
+    monkeypatch.setenv("DRONE_VERIFIER", "sim")
+    monkeypatch.setenv("DRONE_RUNS_DIR", str(tmp_path))
+    from owlsight_mcp import server as s
+    s._mission = None
+    s.start_mission("find the blue backpack"); s.takeoff()
+    s.scan_for("blue backpack"); s.approach("blue backpack"); s.land()
+    return s, s.report_mission("Found the blue backpack.")
+
+
+def test_list_and_open_latest_flight(tmp_path, monkeypatch):
+    s, rep = _fly_and_report(tmp_path, monkeypatch)
+    rows = s.list_flights()["flights"]
+    assert rows[0]["mission_id"] == rep["mission_id"]
+    assert rows[0]["confirmed"] == ["blue backpack"] and rows[0]["rejected"] == 1
+    log = s.get_flight_log()
+    assert log["ok"] and log["mission_id"] == rep["mission_id"]
+    assert [c["confirmed"] for c in log["checks"]] == [False, True]
+    assert log["checks"][0]["frame"] == "black_backpack.png"
+    assert log["landed"] and log["moved_cm"] > 0
+    assert log["report"]["summary"] == "Found the blue backpack."
+
+
+def test_flight_log_frames_come_back_as_images(tmp_path, monkeypatch):
+    import asyncio
+    s, rep = _fly_and_report(tmp_path, monkeypatch)
+    out = asyncio.run(s.mcp.call_tool("get_flight_log", {"mission_id": rep["mission_id"],
+                                                         "show_frames": True, "max_frames": 2}))
+    blocks = out[0] if isinstance(out, tuple) else out
+    images = [b for b in blocks if b.type == "image"]
+    assert len(images) == 2 and images[0].mimeType == "image/png"
+    assert any("rejected" in b.text for b in blocks if b.type == "text")
+
+
+def test_flight_log_refuses_paths_outside_runs(tmp_path, monkeypatch):
+    s, _ = _fly_and_report(tmp_path, monkeypatch)
+    for bad in ("../etc/passwd", "/etc/passwd", "..", "nope"):
+        r = s.get_flight_log(bad)
+        assert r["ok"] is False

@@ -17,10 +17,14 @@ Configuration (environment variables):
 """
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
+from mcp.types import ImageContent, TextContent
+
+from . import flights
 
 from .drone import SimDrone, World
 from .mission import Mission
@@ -30,6 +34,10 @@ from .safety import FlightBox, SafetyGate
 ROOT = Path(__file__).resolve().parent.parent
 mcp = FastMCP("owlsight")
 _mission: Mission | None = None
+
+
+def runs_dir() -> Path:
+    return Path(os.environ.get("DRONE_RUNS_DIR", str(ROOT / "runs"))).expanduser()
 
 
 def _build(goal: str = "") -> Mission:
@@ -60,7 +68,7 @@ def _build(goal: str = "") -> Mission:
         verifier = OpenAIVisionVerifier()
     else:
         verifier = SimVerifier()
-    runs = os.environ.get("DRONE_RUNS_DIR", str(ROOT / "runs"))
+    runs = str(runs_dir())
     return Mission(drone, SafetyGate(box), detector, verifier, runs_dir=runs, goal=goal)
 
 
@@ -188,6 +196,53 @@ def report_mission(summary: str) -> dict:
     unsupported claims, accepted=false lists them, so rewrite and report again.
     Saves the flight log either way. Only claim what was confirmed."""
     return mission().report(summary)
+
+
+@mcp.tool()
+def list_flights(limit: int = 10) -> dict:
+    """Saved missions, newest first: goal, when, how long, what was confirmed,
+    how many look-alikes retriEVAL rejected, and whether the report passed.
+    Use a mission_id from here with get_flight_log."""
+    rows = flights.listing(runs_dir(), limit)
+    return {"flights": rows, "runs_dir": str(runs_dir()),
+            **({} if rows else {"note": "No saved flights yet. A flight is saved by report_mission."})}
+
+
+@mcp.tool()
+def get_flight_log(mission_id: str = "", show_frames: bool = False, max_frames: int = 4,
+                   include_events: bool = False):
+    """Open a saved flight. Leave mission_id empty for the most recent one.
+
+    Returns a summary: every hover check retriEVAL made (what it looked for,
+    distance, confirmed or rejected, score, why, seconds), claims checked
+    mid-flight, safety refusals, distance flown, and the report verdict.
+    show_frames=true also returns the camera frames behind those checks as
+    images, each with a caption, so you can see what retriEVAL saw.
+    include_events=true adds the raw event log."""
+    rd = runs_dir()
+    try:
+        if mission_id.strip():
+            path = flights.log_path(rd, mission_id)
+        else:
+            files = flights.saved(rd)
+            if not files:
+                return {"ok": False, "error": "No saved flights yet. A flight is saved by report_mission."}
+            path = files[0]
+        data = flights.load(path)
+    except (flights.FlightNotFound, OSError, ValueError) as e:
+        return {"ok": False, "error": str(e)}
+    out = {"ok": True, **flights.summarize(data, path)}
+    if include_events:
+        out["events"] = data.get("events", [])
+    if not show_frames:
+        return out
+    pics = flights.frames(data, max(1, min(max_frames, 10)))
+    out["frames_shown"] = len(pics)
+    content = [TextContent(type="text", text=json.dumps(out, indent=2))]
+    for f in pics:
+        content.append(TextContent(type="text", text=f["caption"]))
+        content.append(ImageContent(type="image", data=f["data"], mimeType=f["mime"]))
+    return content
 
 
 def main():

@@ -62,6 +62,8 @@ Claude can act on ("that move would leave the flight box"), and nothing is flown
 | `status` | Position, height, heading, battery, clock |
 | `emergency_stop` | Cut the motors. On a real drone it drops |
 | `report_mission(summary)` | retriEVAL checks the report against the mission's frames; save the log |
+| `list_flights()` | Saved missions, newest first: goal, what was confirmed, look-alikes rejected, report verdict |
+| `get_flight_log(mission_id, show_frames)` | Open a saved flight: every retriEVAL check with its score and reason; `show_frames` returns the camera frames as images |
 
 ## Safety limits
 
@@ -83,7 +85,7 @@ Landing and emergency stop are never refused.
 
 ```bash
 pip install -r requirements.txt
-python -m pytest -q                 # 27 tests, no drone, network or API key needed
+python -m pytest -q                 # 30 tests, no drone, network or API key needed
 python run.py                       # MCP over stdio
 ```
 
