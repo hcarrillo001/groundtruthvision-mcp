@@ -37,7 +37,10 @@ def _build(goal: str = "") -> Mission:
     verifier_name = os.environ.get("DRONE_VERIFIER", "").lower() or default_evaluator()
     if driver == "tello":
         from .tello import TelloDrone
-        drone = TelloDrone()
+        # On home Wi-Fi (station mode) the router gives the Tello its own address;
+        # find it in the router's device list or with tello_join_wifi.py.
+        drone = TelloDrone(frames_dir=str(ROOT / "runs" / "frames"),
+                           host=os.environ.get("TELLO_HOST") or None)
         half = float(os.environ.get("DRONE_BOX_CM", "400")) / 2
         box = FlightBox.around(0, 0, half, half)
         # a real detector (open-vocabulary YOLO) plugs in here once installed

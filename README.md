@@ -143,8 +143,14 @@ is found), `sim` (the simulator's stand-in, no keys needed), or `ollama` /
 
 ```bash
 pip install djitellopy opencv-python ultralytics
-DRONE_DRIVER=tello python run.py      # retriEVAL evaluates, as in the simulator
+python tello_join_wifi.py "Home WiFi" "password"   # once, while joined to the Tello's own Wi-Fi
+DRONE_DRIVER=tello TELLO_HOST=192.168.1.57 python run.py   # the address your router gave the Tello
 ```
+
+The Tello and this computer must be on the same 2.4 GHz network, not a guest
+network (guest networks usually stop devices seeing each other). Reserve the
+Tello's address in your router so `TELLO_HOST` stays right. The computer's
+firewall must let UDP ports 8889, 8890 and 11111 in (commands, state, video).
 
 `tello.py` and `yolo.py` (YOLO-World, an open-vocabulary detector) implement the
 same interfaces as the simulator but are **untested until they meet real

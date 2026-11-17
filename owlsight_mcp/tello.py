@@ -9,7 +9,9 @@ flight box should leave margin for it.
 
 Setup:
   pip install djitellopy opencv-python
-  Tello EDU on your home Wi-Fi (station mode) so this computer keeps internet.
+  Tello EDU on your home Wi-Fi (station mode) so this computer keeps internet:
+  run tello_join_wifi.py once, then set TELLO_HOST to the drone's new address.
+  Without TELLO_HOST it uses 192.168.10.1, the Tello's own network.
 """
 from __future__ import annotations
 
