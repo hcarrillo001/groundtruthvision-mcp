@@ -1,0 +1,7 @@
+mcp>=1.2.0,<2
+pillow
+pytest
+# real drone only:
+# djitellopy
+# opencv-python
+# ultralytics

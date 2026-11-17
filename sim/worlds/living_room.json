@@ -1,0 +1,15 @@
+{
+  "name": "living room",
+  "width": 600,
+  "depth": 500,
+  "start": [300, 80, 0],
+  "empty_photo": "../photos/empty_room.png",
+  "objects": [
+    {"label": "backpack", "description": "black backpack", "x": 200, "y": 300,
+     "photo": "../photos/black_backpack.png"},
+    {"label": "backpack", "description": "blue backpack", "x": 470, "y": 400,
+     "photo": "../photos/blue_backpack.png"},
+    {"label": "couch", "description": "grey couch", "x": 300, "y": 470,
+     "photo": "../photos/couch.png"}
+  ]
+}
