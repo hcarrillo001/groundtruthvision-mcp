@@ -6,8 +6,10 @@ Every action goes the same way:
   3. the flight log records it with the drone's clock and any frame.
 
 The log is the ground truth. At the end, report() turns Claude's summary of the
-mission plus the frames it looked at into a retriEVAL visual_faithfulness case,
-so the report can be checked against what the camera actually saw.
+mission into a retriEVAL visual_faithfulness case with two kinds of evidence:
+the frames the camera captured, and the flight log as plain sentences, so a claim
+passes if a frame shows it ("found the blue backpack") or the log records it
+("flew 262 cm").
 """
 from __future__ import annotations
 
@@ -76,7 +78,7 @@ class Mission:
         if (r := self._guard(self.gate.check_takeoff)):
             return r
         self.drone.takeoff()
-        self._log("takeoff")
+        self._log("takeoff", height_cm=round(self.drone.state.z))
         return self._after({"ok": True})
 
     def land(self) -> dict:
@@ -187,6 +189,8 @@ class Mission:
                     return {**r, "moved_cm": moved}
             remaining = d.distance_cm - STOP_DISTANCE
             if remaining < 20:
+                self._log("arrived", frame=d.frame, query=query,
+                          distance_cm=d.distance_cm, moved_cm=moved)
                 return self._after({"ok": True, "arrived": True, "distance_cm": d.distance_cm,
                                     "moved_cm": moved, "frame": d.frame})
             step = int(min(remaining, self.gate.limits.max_move))
@@ -209,6 +213,47 @@ class Mission:
                 out.append({"src": f, "t": e["t"]})
         return out[:limit]
 
+    def flight_facts(self) -> list:
+        """What the drone logged about itself, as plain sentences: the evidence
+        for claims no camera can show (distances, heights, what it did, what
+        retriEVAL decided). Sent to retriEVAL alongside the frames."""
+        facts = [f"Mission goal: {self.goal}."] if self.goal else []
+        moved = 0
+        for e in self.events:
+            t, k = e.get("t"), e.get("kind")
+            if k == "takeoff":
+                facts.append(f"At t={t}s the drone took off and climbed to {e.get('height_cm')} cm.")
+            elif k == "move":
+                moved += int(e.get("cm") or 0)
+                facts.append(f"At t={t}s it flew {e['direction']} {e['cm']} cm.")
+            elif k == "rotate":
+                side = "right" if e["degrees"] > 0 else "left"
+                facts.append(f"At t={t}s it turned {abs(e['degrees'])} degrees {side}.")
+            elif k == "verify":
+                c = e.get("candidate") or {}
+                verdict = "confirmed it" if e.get("confirmed") else "rejected it"
+                facts.append(f"At t={t}s the detector flagged a {c.get('label')} about "
+                             f"{c.get('distance_cm')} cm away at {c.get('angle')} degrees; while "
+                             f"hovering, the evaluator checked it for '{e.get('query')}' and "
+                             f"{verdict} (score {e.get('confidence')}: {e.get('why', '')}).")
+            elif k == "arrived":
+                facts.append(f"At t={t}s it stopped {e.get('distance_cm')} cm from the "
+                             f"{e.get('query')} after flying {e.get('moved_cm')} cm toward it.")
+            elif k == "land":
+                facts.append(f"At t={t}s it landed.")
+            elif k == "refused":
+                facts.append(f"At t={t}s the safety gate refused a command: {e.get('reason')}")
+            elif k == "auto_land":
+                facts.append(f"At t={t}s it landed itself: {e.get('reason')}.")
+            elif k == "emergency_stop":
+                facts.append(f"At t={t}s the motors were stopped (emergency stop).")
+        if moved:
+            facts.append(f"In total it flew {moved} cm in straight moves.")
+        st = self._status()
+        facts.append(f"Now: {'flying' if st['flying'] else 'on the ground'}, height "
+                     f"{st['height_cm']} cm, battery {st['battery']}%, mission clock {st['clock_s']} s.")
+        return facts
+
     def recent_frames(self, n: int = 3) -> list:
         frames = [{"src": e["frame"], "t": e["t"]} for e in self.events if e.get("frame")]
         if self.drone.state.flying:
@@ -229,7 +274,8 @@ class Mission:
         frames = self.recent_frames()
         t0 = time.perf_counter()
         try:
-            r = check(claim, frames, self.goal or "Drone mission", save=False)
+            r = check(claim, frames, self.goal or "Drone mission", save=False,
+                      facts=self.flight_facts())
         except Exception as e:
             self._log("check_error", claim=claim, error=str(e))
             return {"ok": False, "error": f"retriEVAL could not check the claim: {e}"}
@@ -243,11 +289,12 @@ class Mission:
         """Check the summary with retriEVAL (when it is the evaluator), then save
         the flight log and the retriEVAL case."""
         case = {"input": self.goal or "Drone mission", "actual_output": summary,
-                "images": self.frames_for_report()}
+                "images": self.frames_for_report(), "context": self.flight_facts()}
         check, check_out = getattr(self.verifier, "check_claims", None), None
         if check is not None and case["images"]:
             try:
-                check_out = check(summary, case["images"], case["input"], save=True)
+                check_out = check(summary, case["images"], case["input"], save=True,
+                                  facts=case["context"])
             except Exception as e:
                 check_out = {"error": f"retriEVAL could not check the report: {e}"}
         self._log("report", summary=summary,
@@ -264,9 +311,11 @@ class Mission:
             out["retrieval_check"] = check_out
             out["accepted"] = check_out["passed"]
             if not check_out["passed"]:
-                out["next"] = ("retriEVAL found claims the camera frames don't support: "
+                out["next"] = ("retriEVAL found claims that neither the camera frames nor the "
+                               "flight log support: "
                                + "; ".join(c.rstrip(". ") for c in check_out["unsupported"])
-                               + ". Rewrite the report with only what was confirmed and report again.")
+                               + ". Fix or drop those claims and report again. Distances, "
+                               "heights and actions may stay: the flight log backs them.")
         else:
             if check_out:
                 out["retrieval_check"] = check_out

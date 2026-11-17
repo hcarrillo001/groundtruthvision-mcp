@@ -24,9 +24,11 @@ It runs in a **simulator today** and is built to swap in a **Tello EDU**.
 4. It turns to face the target and flies to about a metre away. Mid-flight,
    `check_claim` lets Claude have retriEVAL check anything it is about to say
    ("the backpack is on the couch") against what the camera sees now.
-5. After landing, `report_mission` sends Claude's report and the mission's
-   frames to retriEVAL. If any claim isn't supported, the report comes back
-   `accepted: false` with the claims to fix.
+5. After landing, `report_mission` sends Claude's report to retriEVAL with two
+   kinds of evidence: the frames the camera captured, and the flight log as
+   plain sentences. "Found the blue backpack" passes because a frame shows it;
+   "flew 262 cm" passes because the log records it. Each claim says which backed
+   it. Anything neither supports comes back `accepted: false` with the claims to fix.
 
 ## Layers
 
@@ -85,7 +87,7 @@ Landing and emergency stop are never refused.
 
 ```bash
 pip install -r requirements.txt
-python -m pytest -q                 # 30 tests, no drone, network or API key needed
+python -m pytest -q                 # 33 tests, no drone, network or API key needed
 python run.py                       # MCP over stdio
 ```
 

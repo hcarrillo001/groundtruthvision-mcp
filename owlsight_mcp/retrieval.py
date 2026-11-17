@@ -5,7 +5,8 @@ owlsight asks retriEVAL to score a claim ("There is a blue backpack in view.")
 against the camera frame with its visual_faithfulness metric. retriEVAL splits
 the claim into parts ("a backpack", "it is blue") and checks each against the
 image, so a black backpack scores 0.5 and is rejected. The same connection
-checks Claude's mission report before it is accepted.
+checks Claude's mission report before it is accepted, against the frames and
+the flight log's facts (distances, heights, actions) together.
 
 The two talk MCP to MCP: owlsight starts retriEVAL as a local MCP server over
 stdio and keeps one session open for the whole flight. Local, because the
@@ -120,13 +121,19 @@ class RetrievalVerifier:
         self.judge = os.environ.get("RETRIEVAL_JUDGE", "") if judge is None else judge
         self.model = "retriEVAL" + (f"/{self.judge}" if self.judge else "")
 
-    def _score(self, text: str, images: list, goal: str, save: bool) -> dict:
-        out = self.client.call("evaluate_case", {
-            "input": goal, "actual_output": text, "metrics": ["visual_faithfulness"],
-            "images": images, "judge": self.judge, "save": save})
+    def _score(self, text: str, images: list, goal: str, save: bool,
+               facts: list | None = None) -> dict:
+        args = {"input": goal, "actual_output": text, "metrics": ["visual_faithfulness"],
+                "images": images, "judge": self.judge, "save": save}
+        if facts:
+            args["context"] = facts
+        out = self.client.call("evaluate_case", args)
         r = out["scores"]["visual_faithfulness"]
         v = (out.get("verdict") or {}).get("visual_faithfulness") or {}
-        return {"score": r["score"], "passed": bool(r["success"]),
+        claims = [{k: c[k] for k in ("claim", "supported", "image", "source", "why")
+                   if c.get(k) not in (None, "")}
+                  for c in (r.get("details") or {}).get("claims", []) if isinstance(c, dict)]
+        return {"score": r["score"], "passed": bool(r["success"]), "claims": claims,
                 "unsupported": (r.get("details") or {}).get("unsupported_claims", []),
                 "reason": r.get("reason", ""), "headline": v.get("headline", ""),
                 "drivers": v.get("drivers", []), "report_url": out.get("report_url"),
@@ -139,6 +146,8 @@ class RetrievalVerifier:
             or s["reason"] or s["headline"]
         return Verdict(s["passed"], s["score"], why, time.perf_counter() - t0, self.model)
 
-    def check_claims(self, text: str, frames: list, goal: str, save: bool = True) -> dict:
-        """Score free text (a mid-flight claim or the mission report) against frames."""
-        return self._score(text, frames, goal, save)
+    def check_claims(self, text: str, frames: list, goal: str, save: bool = True,
+                     facts: list | None = None) -> dict:
+        """Score free text (a mid-flight claim or the mission report) against the
+        frames and, when given, the flight log's facts."""
+        return self._score(text, frames, goal, save, facts)

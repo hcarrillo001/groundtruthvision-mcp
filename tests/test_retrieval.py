@@ -92,3 +92,36 @@ def test_evaluator_failure_does_not_crash_the_flight(tmp_path):
     r = m.scan_for("blue backpack")
     assert r["found"] is False and "no judge key" in r["error"]
     assert m.drone.state.flying                # still hovering, ready for land()
+
+
+def _fly(m):
+    m.takeoff()
+    m.scan_for("blue backpack")
+    a = m.approach("blue backpack")
+    m.land()
+    return a
+
+
+def test_flight_facts_record_what_a_camera_cannot_show(m):
+    a = _fly(m)
+    facts = " ".join(m.flight_facts())
+    assert "climbed to 80 cm" in facts
+    assert "rejected it" in facts and "confirmed it" in facts
+    assert f"stopped {a['distance_cm']} cm from the blue backpack" in facts
+    assert f"after flying {a['moved_cm']} cm" in facts
+    assert "landed" in facts
+
+
+def test_report_with_distances_passes_on_the_flight_log(m):
+    """The real-flight bug: true distances were rejected because no frame shows them."""
+    a = _fly(m)
+    r = m.report(f"Found the blue backpack and flew {a['moved_cm']} cm toward it.")
+    assert r["accepted"] is True
+    assert r["retrieval_case"]["context"] == m.flight_facts()
+
+
+def test_report_with_a_wrong_distance_fails(m):
+    a = _fly(m)
+    r = m.report(f"Found the blue backpack and flew {a['moved_cm'] + 999} cm toward it.")
+    assert r["accepted"] is False
+    assert "flight log" in r["next"]
