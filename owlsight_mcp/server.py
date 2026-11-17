@@ -7,7 +7,10 @@ Run it:
 Configuration (environment variables):
   DRONE_DRIVER         "sim" (default) or "tello"
   DRONE_WORLD          world file for the simulator (default sim/worlds/living_room.json)
-  DRONE_VERIFIER       "sim" (default with the simulator), "ollama", or "openai"
+  DRONE_VERIFIER       "retrieval" (default when retriEVAL is found: it scores
+                       every candidate and the report, live), "sim", "ollama", "openai"
+  RETRIEVAL_SERVER     path to retriEVAL's server.py (see owlsight_mcp/retrieval.py)
+  RETRIEVAL_JUDGE      retriEVAL's judge for these checks, e.g. "nemotron"
   OLLAMA_VISION_MODEL  e.g. qwen2.5vl:7b or moondream, for DRONE_VERIFIER=ollama
   DRONE_BOX_CM         size of the flight box around take-off on a real drone (default 400)
   DRONE_RUNS_DIR       where flight logs are saved (default runs/ in this project)
@@ -31,7 +34,7 @@ _mission: Mission | None = None
 
 def _build(goal: str = "") -> Mission:
     driver = os.environ.get("DRONE_DRIVER", "sim").lower()
-    verifier_name = os.environ.get("DRONE_VERIFIER", "sim" if driver == "sim" else "ollama").lower()
+    verifier_name = os.environ.get("DRONE_VERIFIER", "").lower() or default_evaluator()
     if driver == "tello":
         from .tello import TelloDrone
         drone = TelloDrone()
@@ -45,7 +48,9 @@ def _build(goal: str = "") -> Mission:
         drone = SimDrone(world)
         box = FlightBox(0, 0, world.width, world.depth)
         detector = SimDetector()
-    if verifier_name == "ollama":
+    if verifier_name == "retrieval":
+        verifier = retrieval_verifier()
+    elif verifier_name == "ollama":
         verifier = OllamaVerifier()
     elif verifier_name == "openai":
         from .perception import OpenAIVisionVerifier
@@ -54,6 +59,29 @@ def _build(goal: str = "") -> Mission:
         verifier = SimVerifier()
     runs = os.environ.get("DRONE_RUNS_DIR", str(ROOT / "runs"))
     return Mission(drone, SafetyGate(box), detector, verifier, runs_dir=runs, goal=goal)
+
+
+_retrieval = None
+
+
+def retrieval_verifier():
+    """One retriEVAL session for the life of this server, shared by missions."""
+    global _retrieval
+    if _retrieval is None:
+        from .retrieval import RetrievalVerifier
+        _retrieval = RetrievalVerifier()
+    return _retrieval
+
+
+def default_evaluator() -> str:
+    """retriEVAL when it can be found; otherwise the simulator's stand-in."""
+    from .retrieval import DEFAULT_SERVER
+    path = Path(os.environ.get("RETRIEVAL_SERVER", DEFAULT_SERVER)).expanduser()
+    return "retrieval" if path.is_file() else "sim"
+
+
+def evaluator_name(m: Mission) -> str:
+    return getattr(m.verifier, "model", type(m.verifier).__name__)
 
 
 def mission() -> Mission:
@@ -72,6 +100,7 @@ def start_mission(goal: str) -> dict:
         return {"ok": False, "refused": "The drone is still flying. Land before starting a new mission."}
     _mission = _build(goal)
     return {"ok": True, "mission_id": _mission.id, "goal": goal,
+            "evaluator": evaluator_name(_mission),
             "status": _mission._status(),
             "how": "takeoff, then scan_for the target; it hovers and verifies each "
                    "candidate. approach a confirmed target, land, then report."}
@@ -127,6 +156,15 @@ def approach(target: str) -> dict:
 
 
 @mcp.tool()
+def check_claim(claim: str) -> dict:
+    """Mid-flight: have retriEVAL check a claim against what the camera is
+    seeing now, e.g. "The backpack is on the couch." Returns a score, pass/fail,
+    and any part of the claim the frames don't support. Use it before you
+    tell the user something about what the drone sees."""
+    return mission().check_claim(claim)
+
+
+@mcp.tool()
 def status() -> dict:
     """Position (estimated), height, heading, battery, and mission clock."""
     m = mission()
@@ -142,10 +180,10 @@ def emergency_stop() -> dict:
 
 @mcp.tool()
 def report_mission(summary: str) -> dict:
-    """After landing: write what the drone found, in plain words. Saves the full
-    flight log and returns a retriEVAL case pairing your summary with the frames
-    the camera actually captured, so the summary can be checked with
-    visual_faithfulness. Only claim what the verifications confirmed."""
+    """After landing: write what the drone found, in plain words. retriEVAL
+    checks the summary against the frames the camera captured; if it finds
+    unsupported claims, accepted=false lists them, so rewrite and report again.
+    Saves the flight log either way. Only claim what was confirmed."""
     return mission().report(summary)
 
 

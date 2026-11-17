@@ -122,7 +122,13 @@ class Mission:
         """Tier 2: hover and let the vision model look at the candidate."""
         if (r := self._guard(self.gate.check_hover)):
             return r
-        v = self.verifier.verify(d.frame, query, ref=d.ref)
+        t0 = time.perf_counter()
+        try:
+            v = self.verifier.verify(d.frame, query, ref=d.ref)
+        except Exception as e:                # evaluator down, no judge key, ...
+            self.drone.hover(time.perf_counter() - t0)
+            self._log("verify_error", frame=d.frame, query=query, error=str(e))
+            return {"confirmed": False, "error": f"Could not evaluate the candidate: {e}"}
         self.drone.hover(v.seconds)          # the drone held still for this long
         ok = v.match and v.confidence >= CONFIRM_AT
         self._log("verify", frame=d.frame, query=query, candidate=_det(d),
@@ -149,8 +155,8 @@ class Mission:
                       detections=[_det(d) for d in dets])
             for d in dets:
                 v = self.verify(d, query)
-                if v.get("refused"):
-                    return {**v, "found": False, "rejected": rejected}
+                if v.get("refused") or v.get("error"):
+                    return self._after({**v, "ok": False, "found": False, "rejected": rejected})
                 if v["confirmed"]:
                     if abs(d.angle) >= 5:
                         self.rotate(round(d.angle))
@@ -203,20 +209,70 @@ class Mission:
                 out.append({"src": f, "t": e["t"]})
         return out[:limit]
 
+    def recent_frames(self, n: int = 3) -> list:
+        frames = [{"src": e["frame"], "t": e["t"]} for e in self.events if e.get("frame")]
+        if self.drone.state.flying:
+            frames.append({"src": self.drone.capture("check"), "t": round(self.drone.state.clock, 2)})
+        seen, out = set(), []
+        for f in reversed(frames):
+            if f["src"] not in seen:
+                seen.add(f["src"])
+                out.append(f)
+        return list(reversed(out[:n]))
+
+    def check_claim(self, claim: str) -> dict:
+        """Mid-flight: score a claim against what the camera is seeing now."""
+        check = getattr(self.verifier, "check_claims", None)
+        if check is None:
+            return {"ok": False, "refused": "Live claim checks need retriEVAL as the evaluator "
+                                            "(DRONE_VERIFIER=retrieval)."}
+        frames = self.recent_frames()
+        t0 = time.perf_counter()
+        try:
+            r = check(claim, frames, self.goal or "Drone mission", save=False)
+        except Exception as e:
+            self._log("check_error", claim=claim, error=str(e))
+            return {"ok": False, "error": f"retriEVAL could not check the claim: {e}"}
+        if self.drone.state.flying:
+            self.drone.hover(time.perf_counter() - t0)
+        self._log("check_claim", claim=claim, score=r["score"], passed=r["passed"],
+                  unsupported=r["unsupported"], frames=[f["src"] for f in frames])
+        return self._after({"ok": True, "claim": claim, **r})
+
     def report(self, summary: str) -> dict:
-        """Save the flight log and build the retriEVAL case for the summary."""
+        """Check the summary with retriEVAL (when it is the evaluator), then save
+        the flight log and the retriEVAL case."""
         case = {"input": self.goal or "Drone mission", "actual_output": summary,
                 "images": self.frames_for_report()}
-        self._log("report", summary=summary)
+        check, check_out = getattr(self.verifier, "check_claims", None), None
+        if check is not None and case["images"]:
+            try:
+                check_out = check(summary, case["images"], case["input"], save=True)
+            except Exception as e:
+                check_out = {"error": f"retriEVAL could not check the report: {e}"}
+        self._log("report", summary=summary,
+                  **({"retrieval": {k: v for k, v in check_out.items()
+                                    if k in ("score", "passed", "unsupported", "error")}}
+                     if check_out else {}))
         self.runs_dir.mkdir(parents=True, exist_ok=True)
         path = self.runs_dir / f"{self.id}.json"
         path.write_text(json.dumps({"mission_id": self.id, "goal": self.goal,
                                     "events": self.events, "retrieval_case": case},
                                    indent=2))
-        return {"ok": True, "mission_id": self.id, "log": str(path),
-                "retrieval_case": case,
-                "next": "Check this report with retriEVAL: run_eval with "
-                        "metrics ['visual_faithfulness'] and cases = [retrieval_case]."}
+        out = {"ok": True, "mission_id": self.id, "log": str(path), "retrieval_case": case}
+        if check_out and "error" not in check_out:
+            out["retrieval_check"] = check_out
+            out["accepted"] = check_out["passed"]
+            if not check_out["passed"]:
+                out["next"] = ("retriEVAL found claims the camera frames don't support: "
+                               + "; ".join(c.rstrip(". ") for c in check_out["unsupported"])
+                               + ". Rewrite the report with only what was confirmed and report again.")
+        else:
+            if check_out:
+                out["retrieval_check"] = check_out
+            out["next"] = ("Check this report with retriEVAL: run_eval with metrics "
+                           "['visual_faithfulness'] and cases = [retrieval_case].")
+        return out
 
 
 def _det(d: Detection) -> dict:

@@ -202,6 +202,7 @@ def test_nvidia_verifier_defaults_to_nemotron(monkeypatch):
 
 def test_server_tools_fly_a_mission(monkeypatch, tmp_path):
     monkeypatch.setenv("DRONE_RUNS_DIR", str(tmp_path))
+    monkeypatch.setenv("DRONE_VERIFIER", "sim")    # no retriEVAL or judge key needed
     from owlsight_mcp import server as S
     assert S.start_mission("find the blue backpack")["ok"]
     S.takeoff()
@@ -216,4 +217,4 @@ def test_server_lists_expected_tools():
     from owlsight_mcp import server as S
     names = {t.name for t in asyncio.run(S.mcp.list_tools())}
     assert {"start_mission", "takeoff", "land", "move", "rotate", "look", "scan_for",
-            "approach", "status", "emergency_stop", "report_mission"} <= names
+            "approach", "check_claim", "status", "emergency_stop", "report_mission"} <= names

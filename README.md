@@ -2,10 +2,10 @@
 
 *An owl doesn't swoop on the first shape it sees. It watches, makes sure, then commits.*
 
-Fly a small drone from Claude, Cursor or any MCP client, with a safety gate the
-AI can't talk its way past, a hover-and-verify loop so it doesn't believe the
-first thing it sees, and a flight log that [retriEVAL](https://github.com/hcarrillo001/retrieval-mcp)
-can check its mission report against.
+Fly a small drone from Claude, Cursor or any MCP client. **owlsight flies;
+[retriEVAL](https://github.com/hcarrillo001/retrieval-mcp) evaluates, live.**
+A safety gate the AI can't talk its way past keeps the flight safe; retriEVAL
+decides what the camera really shows before the drone acts on it or reports it.
 
 It runs in a **simulator today** and is built to swap in a **Tello EDU**.
 
@@ -16,12 +16,17 @@ It runs in a **simulator today** and is built to swap in a **Tello EDU**.
 1. The drone takes off and turns on the spot, looking.
 2. A fast detector spots candidates on every frame. It knows *backpack*, not
    *blue*, so a black backpack fools it.
-3. For each candidate the drone **hovers** while a vision model looks closer:
-   "is this a blue backpack?" The black one is rejected; the blue one confirmed.
-4. It turns to face the target and flies to about a metre away.
-5. After landing, Claude writes a report. `report_mission` pairs it with the
-   frames the camera actually captured, as a retriEVAL `visual_faithfulness`
-   case, so any claim the camera doesn't back up gets caught.
+3. For each candidate the drone **hovers** while **retriEVAL** scores the claim
+   "There is a blue backpack in view" against the frame with its
+   `visual_faithfulness` metric. It splits the claim into parts ("a backpack",
+   "it is blue") and checks each: the black backpack scores 0.5 and is
+   rejected, the blue one scores 1.0 and is confirmed.
+4. It turns to face the target and flies to about a metre away. Mid-flight,
+   `check_claim` lets Claude have retriEVAL check anything it is about to say
+   ("the backpack is on the couch") against what the camera sees now.
+5. After landing, `report_mission` sends Claude's report and the mission's
+   frames to retriEVAL. If any claim isn't supported, the report comes back
+   `accepted: false` with the claims to fix.
 
 ## Layers
 
@@ -29,9 +34,14 @@ It runs in a **simulator today** and is built to swap in a **Tello EDU**.
 Claude ──MCP──> server.py     the tools Claude calls
                 mission.py    runs every action through the steps below, keeps the log
                 safety.py     SafetyGate: refuses unsafe commands before they fly
-                perception.py Detector (every frame) + Verifier (hover, look closer)
+                perception.py Detector: fast candidates on every frame
+                retrieval.py  ──MCP──> retriEVAL: scores candidates, claims, the report
                 drone.py      SimDrone, or tello.py for the real Tello EDU
 ```
+
+owlsight talks to retriEVAL MCP to MCP: it starts retriEVAL as a local server
+and keeps one session open for the flight. Local, because the frames are files
+on this computer.
 
 The rule: **Claude decides where to go, the safety gate decides whether it's
 allowed, and the gate always wins.** Refusals come back as plain sentences
@@ -41,16 +51,17 @@ Claude can act on ("that move would leave the flight box"), and nothing is flown
 
 | Tool | What it does |
 |---|---|
-| `start_mission(goal)` | New mission and a fresh flight log |
+| `start_mission(goal)` | New mission and a fresh flight log; says which evaluator is in use |
 | `takeoff` / `land` | Take off to ~80 cm; land |
 | `move(direction, cm)` | forward, back, left, right, up, down; 20-200 cm |
 | `rotate(degrees)` | Positive turns right, negative left |
 | `look(target)` | What the detector sees right now (candidates only) |
-| `scan_for(target)` | Turn and look; hover-and-verify each candidate; stop on a confirmed match |
+| `scan_for(target)` | Turn and look; hover while retriEVAL checks each candidate; stop on a confirmed match |
 | `approach(target)` | Fly toward a confirmed target, stop ~1 m away |
+| `check_claim(claim)` | retriEVAL checks a claim against what the camera sees now |
 | `status` | Position, height, heading, battery, clock |
 | `emergency_stop` | Cut the motors. On a real drone it drops |
-| `report_mission(summary)` | Save the log; return the retriEVAL case for the summary |
+| `report_mission(summary)` | retriEVAL checks the report against the mission's frames; save the log |
 
 ## Safety limits
 
@@ -72,7 +83,7 @@ Landing and emergency stop are never refused.
 
 ```bash
 pip install -r requirements.txt
-python -m pytest -q                 # 21 tests, no drone or network needed
+python -m pytest -q                 # 27 tests, no drone, network or API key needed
 python run.py                       # MCP over stdio
 ```
 
@@ -82,53 +93,57 @@ Cursor (`~/.cursor/mcp.json`) or Claude Desktop:
 {
   "mcpServers": {
     "owlsight": {
-      "command": "python3",
-      "args": ["/Users/hcarrillo/Workspace/owlsight-mcp/run.py"]
+      "command": "/Users/hcarrillo/Workspace/owlsight-mcp/.venv/bin/python",
+      "args": ["/Users/hcarrillo/Workspace/owlsight-mcp/run.py"],
+      "env": {
+        "RETRIEVAL_SERVER": "/Users/hcarrillo/Workspace/retrieval-mcp/retrieval-mcp/server.py",
+        "RETRIEVAL_PYTHON": "/Users/hcarrillo/Workspace/retrieval-mcp/.venv/bin/python",
+        "RETRIEVAL_JUDGE": "nemotron",
+        "OPENROUTER_API_KEY": "sk-or-..."
+      }
     }
   }
 }
 ```
 
-Use the full path to the Python that has the requirements installed if
-`python3` isn't it (for a virtualenv: `/Users/hcarrillo/Workspace/owlsight-mcp/.venv/bin/python`).
-
 Then ask: *"Start a mission to find the blue backpack, take off, scan for it,
 approach it, land, and report what you found."*
 
 The simulated room is `sim/worlds/living_room.json`. Its camera shows the
-pictures in `sim/photos`; replace them with photos of your own room and the
-vision model sees real images.
+pictures in `sim/photos`; replace them with photos of your own room and
+retriEVAL judges real images.
 
-## Choosing the verifier
+## The evaluator: retriEVAL
 
-| `DRONE_VERIFIER` | Uses | When |
+retriEVAL is the evaluator whenever owlsight can find it. Point owlsight at
+your retriEVAL checkout and give retriEVAL a judge that can see images:
+
+| Variable | Meaning |
+|---|---|
+| `RETRIEVAL_SERVER` | Path to retriEVAL's `server.py` (default `~/Workspace/retrieval-mcp/retrieval-mcp/server.py`) |
+| `RETRIEVAL_PYTHON` | A Python with retriEVAL's requirements installed (default: owlsight's own) |
+| `RETRIEVAL_JUDGE` | `nemotron` for NVIDIA via OpenRouter; empty for retriEVAL's default judge |
+
+Judges for these checks:
+
+| Judge | Setup | When |
 |---|---|---|
-| `sim` | The simulated world's ground truth | Default with the simulator |
-| `ollama` | A vision model on your own computer (`OLLAMA_VISION_MODEL`, e.g. `qwen2.5vl:7b` or `moondream`) | Real flights: free, private, no rate limits, ~1-3 s per check |
-| `openai` | Any OpenAI-compatible vision model; default NVIDIA `nemotron-3.5-super-vl:free` on OpenRouter (`OPENROUTER_API_KEY`) | Developing with test photos. Free tier is rate limited and may log images, so not for flights over your home |
+| NVIDIA Nemotron | `RETRIEVAL_JUDGE=nemotron` + `OPENROUTER_API_KEY` | Developing: free, rate limited (~20/min), may log images |
+| Claude | `ANTHROPIC_API_KEY`, leave `RETRIEVAL_JUDGE` empty | Accurate; paid |
+| Local vision model | `RETRIEVAL_JUDGE_BACKEND=ollama`, `RETRIEVAL_JUDGE_MODEL=qwen2.5vl:7b` | Real flights over your home: free, private, no rate limits |
 
-Each check's time is recorded as `hover_s` in the log, so you can measure your
-own setup before flying.
+Each check's time is recorded as `hover_s` in the flight log, so you can
+measure your setup before flying.
 
-## Checking the report with retriEVAL
-
-`report_mission` returns:
-
-```json
-{"retrieval_case": {"input": "find the blue backpack",
-                    "actual_output": "Found a blue backpack ...",
-                    "images": [{"src": ".../frame.jpg", "t": 5.0}]}}
-```
-
-Pass it to retriEVAL's `run_eval` with `metrics: ["visual_faithfulness"]`
-(use `judge="nemotron"` for NVIDIA's free vision model, or Claude). Frames are
-file paths, so run retriEVAL locally (Cursor or Docker) for this step.
+`DRONE_VERIFIER` overrides the choice: `retrieval` (the default when retriEVAL
+is found), `sim` (the simulator's stand-in, no keys needed), or `ollama` /
+`openai` to call a vision model directly without retriEVAL.
 
 ## Real Tello EDU (next)
 
 ```bash
 pip install djitellopy opencv-python ultralytics
-DRONE_DRIVER=tello DRONE_VERIFIER=ollama python -m owlsight_mcp.server
+DRONE_DRIVER=tello python run.py      # retriEVAL evaluates, as in the simulator
 ```
 
 `tello.py` and `yolo.py` (YOLO-World, an open-vocabulary detector) implement the
@@ -145,3 +160,5 @@ moves, so keep the wall margin generous. Put the Tello EDU on your home Wi-Fi
   an estimate from the camera and the wall margin.
 - Jev for fusing detections into decisions, to be compared against plain rules
   on recorded flights.
+- Showing the report's frames on retriEVAL's report page (it lists the claims
+  and verdicts today, not the images).
