@@ -145,3 +145,4 @@ moves, so keep the wall margin generous. Put the Tello EDU on your home Wi-Fi
   an estimate from the camera and the wall margin.
 - Jev for fusing detections into decisions, to be compared against plain rules
   on recorded flights.
+# owlsight-mcp
